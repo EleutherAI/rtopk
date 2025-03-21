@@ -9,18 +9,17 @@
 #define CHECK_CONTIGUOUS(x) AT_ASSERTM(x.is_contiguous(), #x " must be contiguous")
 #define CHECK_INPUT(x) CHECK_CUDA(x); CHECK_CONTIGUOUS(x)
 
-#define RTOPK_CALL(W) \
-    rtopk_kernel<W><<<blocks, threads, shared_mem_size, at::cuda::getCurrentCUDAStream()>>>( \
-        data.data_ptr<float>(), \
-        values.data_ptr<float>(), \
+#define RTOPK_CALL(DTYPE, CAST_DTYPE, W) \
+    rtopk_kernel<DTYPE, W><<<blocks, threads, shared_mem_size, at::cuda::getCurrentCUDAStream()>>>( \
+        (DTYPE*)data.data_ptr<CAST_DTYPE>(), \
+        (DTYPE*)values.data_ptr<CAST_DTYPE>(), \
         indices.data_ptr<int>(), \
         N, \
         dim_origin, \
         k, \
         max_iter, \
-        precision \
+        precision_converted \
     )
-
 
 // Wrapper function that launches the CUDA kernel
 // Expects a 2D tensor 'data' of shape [N, dim_origin] and returns a tuple (values, indices),
@@ -50,12 +49,26 @@ std::tuple<torch::Tensor, torch::Tensor> rtopk_forward_cuda(
     const int blocks = (N + WARPS_PER_BLOCK - 1) / WARPS_PER_BLOCK;
     size_t shared_mem_size = WARPS_PER_BLOCK * dim_origin * sizeof(float);
 
-    // Launch the kernel.
-    // Here we choose the instantiation for WARPS_PER_BLOCK = 8.
-    if (WARPS_PER_BLOCK == 8) RTOPK_CALL(8);
-    else if (WARPS_PER_BLOCK == 4) RTOPK_CALL(4);
-    else if (WARPS_PER_BLOCK == 2) RTOPK_CALL(2);
-    else RTOPK_CALL(1);
+    // Launch the kernel based on data type.
+    if (data.scalar_type() == torch::kFloat32) {
+        float precision_converted = precision;
+        if (WARPS_PER_BLOCK == 8) RTOPK_CALL(float, float, 8);
+        else if (WARPS_PER_BLOCK == 4) RTOPK_CALL(float, float, 4);
+        else if (WARPS_PER_BLOCK == 2) RTOPK_CALL(float, float, 2);
+        else RTOPK_CALL(float, float, 1);
+    }
+#ifdef __CUDA_BF16_TYPES_EXIST__
+    else if (data.scalar_type() == torch::kBFloat16) {
+        __nv_bfloat16 precision_converted = __float2bfloat16(precision);
+        if (WARPS_PER_BLOCK == 8) RTOPK_CALL(__nv_bfloat16, at::BFloat16, 8);
+        else if (WARPS_PER_BLOCK == 4) RTOPK_CALL(__nv_bfloat16, at::BFloat16, 4);
+        else if (WARPS_PER_BLOCK == 2) RTOPK_CALL(__nv_bfloat16, at::BFloat16, 2);
+        else RTOPK_CALL(__nv_bfloat16, at::BFloat16, 1);
+    }
+#endif
+    else {
+        throw std::invalid_argument("Unsupported data type. Only float32 and bfloat16 are supported.");
+    }
 
     // Check for any kernel launch errors.
     cudaError_t err = cudaGetLastError();
@@ -66,21 +79,13 @@ std::tuple<torch::Tensor, torch::Tensor> rtopk_forward_cuda(
     return std::make_tuple(values, indices);
 }
 
-// Option 1: Return only the values (like torch.topk(...).values())
-torch::Tensor rtopk_forward(torch::Tensor data, int k, int max_iter = 10, float precision = 1e-5) {
-    auto result = rtopk_forward_cuda(data, k, max_iter, precision);
-    return std::get<0>(result);
-}
-
-// Option 2: Return both values and indices
-std::tuple<torch::Tensor, torch::Tensor> rtopk_forward_with_indices(
+std::tuple<torch::Tensor, torch::Tensor> rtopk_forward(
     torch::Tensor data, int k, int max_iter = 10, float precision = 1e-5) 
 {
     return rtopk_forward_cuda(data, k, max_iter, precision);
 }
 
-// Binding code
+
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
-    m.def("rtopk_forward", &rtopk_forward, "Approximate TopK forward (CUDA)");
-    m.def("rtopk_forward_with_indices", &rtopk_forward_with_indices, "Approximate TopK forward with indices (CUDA)");
+    m.def("rtopk_forward", &rtopk_forward, "Approximate TopK forward");
 }

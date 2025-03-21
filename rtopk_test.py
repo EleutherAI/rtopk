@@ -8,10 +8,12 @@ import torch
 import rtopk  # This is the module built from your CUDA extension
 
 data = torch.randn((128, 256), device="cuda", requires_grad=True)
-torch.allclose(rtopk.rtopk_autograd(data, 16)[0].min(dim=-1).values, data.topk(16).values.min(dim=-1).values, atol=1e-2)
+torch.allclose(rtopk.rtopk_autograd(    data, 16)[0].min(dim=-1).values,
+               data.topk(16).values.min(dim=-1).values,
+               atol=1e-2)
 #%%
 B = 2**12
-E = 65536
+E = 65536 * 2
 K = 128
 
 data_bf16 = torch.randn(B, E, device="cuda", requires_grad=True, dtype=torch.bfloat16)
@@ -45,24 +47,24 @@ MAX_SIZE = 8192
 @torch.compile
 def rtopk_topk(data, k=K, max_iter=10):
     # return rtopk.rtopk_autograd(data.float(), k, max_iter=max_iter)
-    data = data.float()
+    # data = data.float()
     data = data.unflatten(-1, (-1, MAX_SIZE))
     values, indices = rtopk.rtopk_autograd(data, k, max_iter=max_iter)
     # return values, indices
     # return values[:, 0], indices[:, 0]
-    indices = indices.long()
-    # values_l2, indices_l2 = rtopk.rtopk_autograd(values.flatten(-2), k, max_iter=max_iter)
-    values_l2, indices_l2 = values.flatten(-2).topk(k)
+    # indices = indices.long()
+    values_l2, indices_l2 = rtopk.rtopk_autograd(values.flatten(-2), k, max_iter=max_iter)
+    # values_l2, indices_l2 = values.flatten(-2).topk(k)
     indices = (
         indices
         + torch.arange(indices.shape[-2],
-                       device=indices.device, dtype=indices.dtype
+                       device=indices.device, dtype=torch.int32
                        )[:, None] * indices.shape[-1]
         ).flatten(-2).gather(-1, indices_l2.long())
     return values_l2, indices
 
 with torch.inference_mode():
-    timing("rtopk", rtopk_topk, data)
+    timing("rtopk", rtopk_topk, data_bf16)
     timing("groupmax", groupmax, data_bf16)
     timing("topk", basic_topk, data_bf16)
     print(

@@ -27,7 +27,7 @@ void checkErr() {
 int main() {
     // int N_list[] = {16384, 65536, 262144, 1048576};
     int N_list[] = {8192};
-    int dim_origin_list[] = {16384};
+    int dim_origin_list[] = {8192};
     // int dim_k_list[] = {16, 32, 64, 96, 128};
     int dim_k_list[] = {64, 128, 256, 512};
     int max_iter_list[] = {2, 3, 4, 5, 6, 7, 8, 10000};
@@ -63,7 +63,7 @@ int main() {
     ofstream fout("output3000.txt");
 
     for (int N : N_list) {
-        for (int dim_origin = 8192; dim_origin <= 262144; dim_origin *= 2) {
+        for (int dim_origin = 1024; dim_origin <= 8192; dim_origin *= 2) {
             // for (int dim_origin : dim_origin_list){
             for (int dim_k : dim_k_list) {
                 if (dim_k >= dim_origin) {
@@ -88,19 +88,19 @@ int main() {
                         // warmup
                         for (int i = 0; i < times; i++) {
                             if (w == 8) {
-                                rtopk_kernel<8><<<N / w, w * 32, shared_size>>>(
+                                rtopk_kernel<float, 8><<<N / w, w * 32, shared_size>>>(
                                     devData, value, index, N, dim_origin, dim_k,
                                     max_iter, precision);
                             } else if (w == 4) {
-                                rtopk_kernel<4><<<N / w, w * 32, shared_size>>>(
+                                rtopk_kernel<float, 4><<<N / w, w * 32, shared_size>>>(
                                     devData, value, index, N, dim_origin, dim_k,
                                     max_iter, precision);
                             } else if (w == 2) {
-                                rtopk_kernel<2><<<N / w, w * 32, shared_size>>>(
+                                rtopk_kernel<float, 2><<<N / w, w * 32, shared_size>>>(
                                     devData, value, index, N, dim_origin, dim_k,
                                     max_iter, precision);
                             } else {
-                                rtopk_kernel<1><<<N / w, w * 32, shared_size>>>(
+                                rtopk_kernel<float, 1><<<N / w, w * 32, shared_size>>>(
                                     devData, value, index, N, dim_origin, dim_k,
                                     max_iter, precision);
                             }
@@ -110,19 +110,19 @@ int main() {
                         for (int i = 0; i < times; i++) {
                             timestamp(t0);
                             if (w == 8) {
-                                rtopk_kernel<8><<<N / w, w * 32, shared_size>>>(
+                                rtopk_kernel<float, 8><<<N / w, w * 32, shared_size>>>(
                                     devData, value, index, N, dim_origin, dim_k,
                                     max_iter, precision);
                             } else if (w == 4) {
-                                rtopk_kernel<4><<<N / w, w * 32, shared_size>>>(
+                                rtopk_kernel<float, 4><<<N / w, w * 32, shared_size>>>(
                                     devData, value, index, N, dim_origin, dim_k,
                                     max_iter, precision);
                             } else if (w == 2) {
-                                rtopk_kernel<2><<<N / w, w * 32, shared_size>>>(
+                                rtopk_kernel<float, 2><<<N / w, w * 32, shared_size>>>(
                                     devData, value, index, N, dim_origin, dim_k,
                                     max_iter, precision);
                             } else {
-                                rtopk_kernel<1><<<N / w, w * 32, shared_size>>>(
+                                rtopk_kernel<float, 1><<<N / w, w * 32, shared_size>>>(
                                     devData, value, index, N, dim_origin, dim_k,
                                     max_iter, precision);
                             }

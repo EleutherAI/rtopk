@@ -6,7 +6,7 @@ class RTopKFunction(torch.autograd.Function):
     def forward(ctx, data, k, max_iter=10, precision=1e-5):
         # Call the CUDA extension that returns both values and indices.
         # data: [N, dim_origin]
-        values, indices = rtopk_cuda.rtopk_forward_with_indices(data, k, max_iter, precision)
+        values, indices = rtopk_cuda.rtopk_forward(data, k, max_iter, precision)
         # Save the indices and input shape for backward.
         ctx.save_for_backward(indices)
         ctx.input_shape = data.shape
