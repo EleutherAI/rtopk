@@ -16,5 +16,6 @@ setup(
     packages=["rtopk"],
     cmdclass={
         "build_ext": BuildExtension
-    }
+    },
+    setup_requires=["torch"],
 )

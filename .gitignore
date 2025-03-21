@@ -175,3 +175,7 @@ cython_debug/
 
 CMakeCache.txt
 CMakeFiles/
+*.cmake
+/rtopk_test
+Makefile
+output3000.txt

@@ -9,6 +9,19 @@
 #define CHECK_CONTIGUOUS(x) AT_ASSERTM(x.is_contiguous(), #x " must be contiguous")
 #define CHECK_INPUT(x) CHECK_CUDA(x); CHECK_CONTIGUOUS(x)
 
+#define RTOPK_CALL(W) \
+    rtopk_kernel<W><<<blocks, threads, shared_mem_size, at::cuda::getCurrentCUDAStream()>>>( \
+        data.data_ptr<float>(), \
+        values.data_ptr<float>(), \
+        indices.data_ptr<int>(), \
+        N, \
+        dim_origin, \
+        k, \
+        max_iter, \
+        precision \
+    )
+
+
 // Wrapper function that launches the CUDA kernel
 // Expects a 2D tensor 'data' of shape [N, dim_origin] and returns a tuple (values, indices),
 // where for each of the N rows, the top-k approximate values (and their original indices)
@@ -32,23 +45,17 @@ std::tuple<torch::Tensor, torch::Tensor> rtopk_forward_cuda(
 
     // Choose kernel launch parameters.
     // Each block processes WARPS_PER_BLOCK rows, with each warp (32 threads) handling one row.
-    const int WARPS_PER_BLOCK = 8;
+    const int WARPS_PER_BLOCK = dim_origin < 1024 ? 8 : (dim_origin < 2048 ? 4 : (dim_origin < 4096 ? 2 : 1));
     const int threads = WARPS_PER_BLOCK * 32;
     const int blocks = (N + WARPS_PER_BLOCK - 1) / WARPS_PER_BLOCK;
     size_t shared_mem_size = WARPS_PER_BLOCK * dim_origin * sizeof(float);
 
     // Launch the kernel.
     // Here we choose the instantiation for WARPS_PER_BLOCK = 8.
-    rtopk_kernel<8><<<blocks, threads, shared_mem_size, at::cuda::getCurrentCUDAStream()>>>(
-        data.data_ptr<float>(),
-        values.data_ptr<float>(),
-        indices.data_ptr<int>(),
-        N,
-        dim_origin,
-        k,
-        max_iter,
-        precision
-    );
+    if (WARPS_PER_BLOCK == 8) RTOPK_CALL(8);
+    else if (WARPS_PER_BLOCK == 4) RTOPK_CALL(4);
+    else if (WARPS_PER_BLOCK == 2) RTOPK_CALL(2);
+    else RTOPK_CALL(1);
 
     // Check for any kernel launch errors.
     cudaError_t err = cudaGetLastError();

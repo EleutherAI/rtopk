@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.5)
-project (rtopk C CXX CUDA)
+project (rtopk_test C CXX CUDA)
 set(CMAKE_CUDA_ARCHITECTURES 80)
 
 set(CMAKE_CXX_STANDARD 17)

@@ -24,4 +24,15 @@ class RTopKFunction(torch.autograd.Function):
         return grad_input, None, None, None
 
 def rtopk_autograd(data, k, max_iter=10, precision=1e-5):
-    return RTopKFunction.apply(data, k, max_iter, precision)
+    higher_dimensions = data.dim() > 2
+    if higher_dimensions:
+        og_shape = data.shape[:-1]
+        data = data.flatten(0, -2)
+    values, indices = RTopKFunction.apply(data, k, max_iter, precision)
+    if higher_dimensions:
+        values = values.unflatten(0, og_shape)
+        indices = indices.unflatten(0, og_shape)
+    return values, indices
+
+
+__all__ = ["rtopk_autograd", "RTopKFunction", "rtopk_cuda"]

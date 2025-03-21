@@ -16,10 +16,18 @@ inline double getDuration(
 
 using namespace std;
 
+void checkErr() {
+    cudaError_t err = cudaGetLastError();
+    if (err != cudaSuccess) {
+        cout << "Error: " << cudaGetErrorString(err) << endl;
+        exit(1);
+    }
+}
+
 int main() {
     // int N_list[] = {16384, 65536, 262144, 1048576};
-    int N_list[] = {65536};
-    int dim_origin_list[] = {8192};
+    int N_list[] = {8192};
+    int dim_origin_list[] = {16384};
     // int dim_k_list[] = {16, 32, 64, 96, 128};
     int dim_k_list[] = {64, 128, 256, 512};
     int max_iter_list[] = {2, 3, 4, 5, 6, 7, 8, 10000};
@@ -48,12 +56,14 @@ int main() {
     curandSetPseudoRandomGeneratorSeed(gen, 1234ULL);
     curandGenerateUniform(gen, devData, max_N * max_dim_origin);
 
+    checkErr();
+
     cout << "data ready, testing..." << endl;
 
     ofstream fout("output3000.txt");
 
     for (int N : N_list) {
-        for (int dim_origin = 128; dim_origin <= 8192; dim_origin += 128) {
+        for (int dim_origin = 8192; dim_origin <= 262144; dim_origin *= 2) {
             // for (int dim_origin : dim_origin_list){
             for (int dim_k : dim_k_list) {
                 if (dim_k >= dim_origin) {
@@ -61,6 +71,8 @@ int main() {
                 }
                 for (float precision : precision_list) {
                     for (int max_iter : max_iter_list) {
+                        cout << "N = " << N << ", dim_origin = " << dim_origin;
+
                         int w;
                         if (dim_origin <= 1024) {
                             w = 8;
@@ -115,11 +127,12 @@ int main() {
                                     max_iter, precision);
                             }
                             cudaDeviceSynchronize();
+                            checkErr();
                             timestamp(t1);
                             measured_time += getDuration(t0, t1);
                         }
 
-                        cout << "N = " << N << ", dim_origin = " << dim_origin
+                        cout
                              << ", dim_k = " << dim_k
                              << ", max_iter = " << max_iter
                              << ", topk time = " << measured_time / times * 1000

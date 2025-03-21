@@ -1,0 +1,7 @@
+[project]
+name = "rtopk-torch"
+version = "0.0.1"
+
+[build-system]
+requires = ["setuptools", "wheel", "torch"]
+build-backend = "setuptools.build_meta"
