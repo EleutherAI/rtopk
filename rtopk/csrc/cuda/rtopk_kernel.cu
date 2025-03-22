@@ -26,9 +26,14 @@ __device__ inline T cuda_min(T a, T b) {
     return a < b ? a : b;
 }
 
-template <typename T>
-__device__ inline T convert_to(float val) {
+template <typename T, typename U>
+__device__ inline T convert_to(U val) {
     return T(val);
+}
+
+template <typename T>
+__device__ inline T cuda_avg(T a, T b) {
+    return (a + b) / convert_to<T>(2.0f);
 }
 
 #ifdef __CUDA_BF16_TYPES_EXIST__
@@ -46,6 +51,11 @@ __device__ inline __nv_bfloat16 cuda_min(__nv_bfloat16 a, __nv_bfloat16 b) {
 template <>
 __device__ inline __nv_bfloat16 convert_to(float val) {
     return __float2bfloat16(val);
+}
+
+template <>
+__device__ inline __nv_bfloat16 cuda_avg(__nv_bfloat16 a, __nv_bfloat16 b) {
+    return __hadd(a, b) / __float2bfloat16(2.0f);
 }
 #endif
 
@@ -105,8 +115,8 @@ __global__ void rtopk_kernel(DataT *data, DataT *value, int *index, int N, int d
     // Reduce within the warp.
     #pragma unroll
     for (int offset = 16; offset > 0; offset /= 2) {
-        max_data = cuda_max(max_data, __shfl_down_sync(0xFFFFFFFF, max_data, offset));
-        min_data = cuda_min(min_data, __shfl_down_sync(0xFFFFFFFF, min_data, offset));
+        max_data = cuda_max(max_data, convert_to<DataT>(__shfl_down_sync(0xFFFFFFFF, max_data, offset)));
+        min_data = cuda_min(min_data, convert_to<DataT>(__shfl_down_sync(0xFFFFFFFF, min_data, offset)));
     }
 
     max_data = __shfl_sync(0xFFFFFFFF, max_data, 0);
@@ -144,7 +154,7 @@ __global__ void rtopk_kernel(DataT *data, DataT *value, int *index, int N, int d
             break;
         }
 
-        DataT new_mid = (min_data + max_data) / convert_to<DataT>(2.0f);
+        DataT new_mid = cuda_avg(min_data, max_data);
         if (new_mid <= (min_data + precision) || abs_diff(mid_data, new_mid) <= precision) {
             break;
         } else {
@@ -207,6 +217,12 @@ template __global__ void rtopk_kernel<float, 8>(float*, float*, int*, int, int, 
 template __global__ void rtopk_kernel<float, 4>(float*, float*, int*, int, int, int, int, float);
 template __global__ void rtopk_kernel<float, 2>(float*, float*, int*, int, int, int, int, float);
 template __global__ void rtopk_kernel<float, 1>(float*, float*, int*, int, int, int, int, float);
+
+// Instantiate the kernel for short.
+template __global__ void rtopk_kernel<short, 8>(short*, short*, int*, int, int, int, int, short);
+template __global__ void rtopk_kernel<short, 4>(short*, short*, int*, int, int, int, int, short);
+template __global__ void rtopk_kernel<short, 2>(short*, short*, int*, int, int, int, int, short);
+template __global__ void rtopk_kernel<short, 1>(short*, short*, int*, int, int, int, int, short);
 
 #ifdef __CUDA_BF16_TYPES_EXIST__
 // And instantiate for bfloat16.

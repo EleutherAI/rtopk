@@ -1,23 +1,24 @@
 #%%
 %env CUDA_VISIBLE_DEVICES=2
-%env CUDA_LAUNCH_BLOCKING=1
+# %env CUDA_LAUNCH_BLOCKING=1
 %load_ext autoreload
 import torch
 import rtopk
 %autoreload 2
 #%%
-data = torch.randn((128, 256), device="cuda", requires_grad=True)
+data = torch.randn((128, 256), device="cuda", requires_grad=True).bfloat16()
 torch.allclose(rtopk.ops.rtopk(    data, 16)[0].min(dim=-1).values,
                data.topk(16).values.min(dim=-1).values,
                atol=1e-2)
 #%%
 B = 2**14
-# E = 65536 // 2
 E = 4096
+# E = 4096
 K = 128
 
 data_bf16 = torch.randn(B, E, device="cuda", requires_grad=True, dtype=torch.bfloat16)
 data = data_bf16.float()
+data_half = data.half()
 #%%
 from tqdm.auto import tqdm
 import torch.utils.benchmark
@@ -51,7 +52,7 @@ MAX_SIZE = 8192
 @torch.compile
 def rtopk_topk(data, max_iter=10, k_div: int = 1, k: int = K):
     if data.shape[-1] < MAX_SIZE:
-        return rtopk.ops.rtopk(data.float(), k, max_iter=max_iter)
+        return rtopk.ops.rtopk(data, k, max_iter=max_iter)
     # return rtopk.rtopk_autograd(data.float(), k, max_iter=max_iter)
     # data = data.float()
     data = data.unflatten(-1, (-1, MAX_SIZE))
@@ -65,7 +66,7 @@ def rtopk_topk(data, max_iter=10, k_div: int = 1, k: int = K):
     # return values, indices
     # return values[:, 0], indices[:, 0]
     # indices = indices.long()
-    values_l2, indices_l2 = rtopk.rtopk_autograd(values.flatten(-2), k, max_iter=max_iter)
+    values_l2, indices_l2 = rtopk.ops.rtopk(values.flatten(-2), k, max_iter=max_iter)
     # values_l2, indices_l2 = values.flatten(-2).topk(k)
     indices = (
         indices
@@ -88,10 +89,11 @@ with torch.inference_mode():
     vb, ib = basic_topk(data)
     vg, ig = groupmax(data)
     groupmax_recall = recall(ig, ib).item()
+rtopk_data = data_bf16 if MAX_SIZE > 8192 else data
 for max_iter in tqdm(max_iters):
-    rtopk_perf = timing("rtopk", rtopk_topk, data_bf16, max_iter, k_div)
+    rtopk_perf = timing("rtopk", rtopk_topk, rtopk_data, max_iter, k_div)
     with torch.inference_mode():
-        vr, ir = rtopk_topk(data_bf16, max_iter=max_iter, k_div=k_div)
+        vr, ir = rtopk_topk(rtopk_data, max_iter=max_iter, k_div=k_div)
         rtopk_perfs.append(rtopk_perf)
         rtopk_recalls.append(recall(ir, ib).item())
     if rtopk_perf > topk_perf * 2:

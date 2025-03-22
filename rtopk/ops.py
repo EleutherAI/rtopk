@@ -3,7 +3,9 @@ import torch
 __all__ = ["rtopk"]
 
 def rtopk(data, k, max_iter=10, precision=1e-5):
-    return torch.ops.rtopk.rtopk.default(data, k, max_iter, precision)
+    data_in = data.flatten(0, -2)
+    values, indices = torch.ops.rtopk.rtopk.default(data_in, k, max_iter, precision)
+    return values.unflatten(0, data.shape[:-1]), indices.unflatten(0, data.shape[:-1])
 
 
 @torch.library.register_fake("rtopk::rtopk")

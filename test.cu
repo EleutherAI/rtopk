@@ -5,7 +5,9 @@
 #include <curand.h>
 #include <algorithm>
 #include <iomanip>
-#include "rtopk_kernel.cuh"
+#include "rtopk/csrc/cuda/rtopk_kernel.cuh"
+#include <torch/torch.h>
+
 
 #define timestamp(__var__) auto __var__ = std::chrono::system_clock::now();
 inline double getDuration(
@@ -135,14 +137,38 @@ int main() {
                         cout
                              << ", dim_k = " << dim_k
                              << ", max_iter = " << max_iter
-                             << ", topk time = " << measured_time / times * 1000
-                             << endl;
+                             << ", rtopk time = " << measured_time / times * 1000 << " ms";
                         fout << "N = " << N << ", dim_origin = " << dim_origin
                              << ", dim_k = " << dim_k
                              << ", max_iter = " << max_iter
-                             << ", topk time = " << measured_time / times * 1000
-                             << endl;
+                             << ", rtopk time = " << measured_time / times * 1000 << " ms" << endl;
                         // fout.flush();
+
+                        // Convert raw CUDA data to torch tensors for comparison
+                        // Create a torch tensor that views the raw CUDA data without copying
+                        auto options = torch::TensorOptions().dtype(torch::kFloat32).device(torch::kCUDA);
+                        torch::Tensor data_tensor = torch::from_blob(devData, {N, dim_origin}, options);
+
+                        // Create output tensors
+                        torch::Tensor values_tensor = torch::from_blob(value, {N, dim_k}, options);
+                        torch::Tensor indices_tensor = torch::from_blob(index, {N, dim_k}, 
+                                                                     torch::TensorOptions().dtype(torch::kInt32).device(torch::kCUDA));
+
+                        double measured_time_topk = 0;
+                        cudaDeviceSynchronize();
+                        for (int i = 0; i < times; i++) {
+                            timestamp(t0);
+                            
+                            auto result = torch::topk(data_tensor, dim_k, 1);
+
+                            cudaDeviceSynchronize();
+                            checkErr();
+                            timestamp(t1);
+                            measured_time_topk += getDuration(t0, t1);
+                        }
+
+                        cout << ", torch topk time = " << measured_time_topk / times * 1000 << " ms" << endl;
+                        fout << ", torch topk time = " << measured_time_topk / times * 1000 << " ms" << endl;
                     }
                 }
             }
