@@ -1,8 +1,4 @@
-#include <torch/extension.h>
-#include <ATen/cuda/CUDAContext.h>
-#include <cuda.h>
-#include <cuda_runtime.h>
-#include "rtopk_kernel.cuh"  // Make sure this file is in your include path
+#include "rtopk_cuda.cuh"
 
 // Convenience macros for error checking
 #define CHECK_CUDA(x) AT_ASSERTM(x.is_cuda(), #x " must be a CUDA tensor")
@@ -25,11 +21,11 @@
 // Expects a 2D tensor 'data' of shape [N, dim_origin] and returns a tuple (values, indices),
 // where for each of the N rows, the top-k approximate values (and their original indices)
 // are stored in an output tensor of shape [N, k].
-std::tuple<torch::Tensor, torch::Tensor> rtopk_forward_cuda(
-    torch::Tensor data,
-    int k,
-    int max_iter,
-    float precision) 
+std::tuple<at::Tensor, at::Tensor> rtopk_forward_cuda(
+    at::Tensor data,
+    int64_t k,
+    int64_t max_iter,
+    double precision)
 {
     // Ensure input is a contiguous CUDA tensor.
     CHECK_INPUT(data);
@@ -77,15 +73,4 @@ std::tuple<torch::Tensor, torch::Tensor> rtopk_forward_cuda(
     }
 
     return std::make_tuple(values, indices);
-}
-
-std::tuple<torch::Tensor, torch::Tensor> rtopk_forward(
-    torch::Tensor data, int k, int max_iter = 10, float precision = 1e-5) 
-{
-    return rtopk_forward_cuda(data, k, max_iter, precision);
-}
-
-
-PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
-    m.def("rtopk_forward", &rtopk_forward, "Approximate TopK forward");
 }

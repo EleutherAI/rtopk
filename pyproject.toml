@@ -1,8 +1,8 @@
 [project]
 name = "rtopk-torch"
 version = "0.0.1"
-
+dynamic = ["dependencies", "readme", "description"]
 
 [build-system]
-requires = ["setuptools", "wheel", "torch"]
+requires = ["setuptools", "wheel", "torch==2.6.0"]
 build-backend = "setuptools.build_meta"
