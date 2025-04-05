@@ -1,5 +1,5 @@
 #%%
-%env CUDA_VISIBLE_DEVICES=2
+%env CUDA_VISIBLE_DEVICES=0
 # %env CUDA_LAUNCH_BLOCKING=1
 %load_ext autoreload
 import torch
@@ -12,30 +12,38 @@ torch.allclose(rtopk.ops.rtopk(    data, 16)[0].min(dim=-1).values,
                atol=1e-2)
 #%%
 B = 2**14
-E = 4096
+# E = 4096
+# E = 65536
+E = 2**17
 # E = 4096
 K = 128
 
 data_bf16 = torch.randn(B, E, device="cuda", requires_grad=True, dtype=torch.bfloat16)
 data = data_bf16.float()
 data_half = data.half()
+# #%%
+# from tqdm.auto import tqdm
+# import torch.utils.benchmark
+
+
+# def timing(name, fn, *args):
+#     with torch.inference_mode():
+#         fn(*args)
+#         timer = torch.utils.benchmark.Timer(
+#             stmt="fn(*args)",
+#             globals={"fn": fn, "args": args},
+#             setup="fn(*args)",
+#         ).blocked_autorange()
+#         print(name, timer.mean * 1e3, "ms")
+#     return timer.mean
+
+
+# def run_rtopk(data):
+#     return rtopk.ops.rtopk(data, K)
+
+# timing("rtopk", run_rtopk, data_bf16)
+# timing("rtopk_float", run_rtopk, data)
 #%%
-from tqdm.auto import tqdm
-import torch.utils.benchmark
-
-
-def timing(name, fn, *args):
-    with torch.inference_mode():
-        fn(*args)
-        timer = torch.utils.benchmark.Timer(
-            stmt="fn(*args)",
-            globals={"fn": fn, "args": args},
-            setup="fn(*args)",
-        ).blocked_autorange()
-        print(name, timer.mean * 1e3, "ms")
-    return timer.mean
-
-
 @torch.compile
 def basic_topk(data):
     return data.topk(K)
@@ -48,7 +56,7 @@ def groupmax(vals, k=K):
     indices = indices + torch.arange(0, k, device=indices.device, dtype=indices.dtype) * (M // k)
     return values, indices
 
-MAX_SIZE = 8192
+MAX_SIZE = 1024
 @torch.compile
 def rtopk_topk(data, max_iter=10, k_div: int = 1, k: int = K):
     if data.shape[-1] < MAX_SIZE:
@@ -66,6 +74,7 @@ def rtopk_topk(data, max_iter=10, k_div: int = 1, k: int = K):
     # return values, indices
     # return values[:, 0], indices[:, 0]
     # indices = indices.long()
+    
     values_l2, indices_l2 = rtopk.ops.rtopk(values.flatten(-2), k, max_iter=max_iter)
     # values_l2, indices_l2 = values.flatten(-2).topk(k)
     indices = (
@@ -82,14 +91,14 @@ def recall(a_ind, b_ind):
 max_iters = [1, 2, 3, 4, 6, 8, 12, 16, 512, 2048]
 rtopk_perfs = []
 rtopk_recalls = []
-k_div = 1
+k_div = 32
 topk_perf = timing("topk", basic_topk, data_bf16)
 groupmax_perf = timing("groupmax", groupmax, data_bf16)
 with torch.inference_mode():
     vb, ib = basic_topk(data)
     vg, ig = groupmax(data)
     groupmax_recall = recall(ig, ib).item()
-rtopk_data = data_bf16 if MAX_SIZE > 8192 else data
+rtopk_data = data_bf16  # if MAX_SIZE > 8192 else data
 for max_iter in tqdm(max_iters):
     rtopk_perf = timing("rtopk", rtopk_topk, rtopk_data, max_iter, k_div)
     with torch.inference_mode():
@@ -98,12 +107,14 @@ for max_iter in tqdm(max_iters):
         rtopk_recalls.append(recall(ir, ib).item())
     if rtopk_perf > topk_perf * 2:
         break
+#%%
 from matplotlib import pyplot as plt
-plt.scatter(rtopk_perfs, rtopk_recalls)
-plt.scatter(groupmax_perf, groupmax_recall, marker="x")
-plt.plot([topk_perf, topk_perf], [0, 1], "--")
+plt.scatter(rtopk_perfs, rtopk_recalls, label="RTopK")
+plt.scatter(groupmax_perf, groupmax_recall, marker="x", label="GroupMax")
+plt.plot([topk_perf, topk_perf], [0, 1], "--", label="TopK")
 plt.ylabel("Recall")
 plt.xlabel("Time (s)")
 plt.xscale("log")
 plt.title(f"RTopK Recall vs Time (B={B}, M={E}, K={K}, k_div={k_div})")
+plt.legend()
 #%%
