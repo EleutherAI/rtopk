@@ -4,5 +4,5 @@ version = "0.0.1"
 dynamic = ["dependencies", "readme", "description"]
 
 [build-system]
-requires = ["setuptools", "wheel", "torch==2.6.0"]
+requires = ["setuptools", "wheel", "torch==2.7.0"]
 build-backend = "setuptools.build_meta"
