@@ -25,7 +25,7 @@ def _(data, k, max_iter=10, precision=1e-5):
     return values, indices
 
 
-def _backward_rtopk(ctx, grad_output):
+def _backward_rtopk(ctx, grad_output, something):
     if not ctx.needs_input_grad[0]:
         return None, None, None, None
     indices, = ctx.saved_tensors  # indices has shape [N, k]
